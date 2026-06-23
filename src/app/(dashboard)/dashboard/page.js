@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { convertToWav } from '@/lib/audioConverter';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -74,12 +75,30 @@ export default function DashboardPage() {
     if (!selectedFile) return;
     
     setLoading(true);
-    setProgress(10);
-    setStatusText('Đang tải tệp lên máy chủ cục bộ...');
+    setProgress(5);
+    setStatusText('Đang chuẩn bị tệp tin...');
 
     try {
+      let fileToUpload = selectedFile;
+      
+      // Perform client-side audio extraction/compression to bypass 4.5MB Vercel limit
+      try {
+        fileToUpload = await convertToWav(selectedFile, (msg) => {
+          setStatusText(msg);
+          // Scale progress during client conversion (0% -> 20%)
+          setProgress((prev) => Math.min(20, prev + 3));
+        });
+      } catch (convErr) {
+        console.warn('Client-side audio conversion failed, attempting raw upload:', convErr);
+        // Fallback to raw file if conversion fails for some reason
+        fileToUpload = selectedFile;
+      }
+
+      setProgress(20);
+      setStatusText('Đang tải tệp âm thanh đã nén lên máy chủ...');
+
       const formData = new FormData();
-      formData.append('file', selectedFile);
+      formData.append('file', fileToUpload);
 
       // Create an XMLHttpRequest to track upload progress
       const xhr = new XMLHttpRequest();
@@ -88,8 +107,8 @@ export default function DashboardPage() {
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
           const percent = (event.loaded / event.total) * 100;
-          // Scale progress: local upload is 0% to 55%
-          setProgress(Math.round(percent * 0.55));
+          // Scale progress: upload is 20% to 70%
+          setProgress(20 + Math.round(percent * 0.50));
           setStatusText(`Đang tải tệp lên máy chủ: ${Math.round(percent)}%`);
         }
       };
@@ -117,18 +136,18 @@ export default function DashboardPage() {
       // Start uploading
       xhr.send(formData);
 
-      // Fake polling visual progression for transcription task (from 55% to 95%)
+      // Fake polling visual progression for transcription task (from 70% to 95%)
       const interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 95) {
             clearInterval(interval);
             return 95;
           }
-          if (prev >= 80) {
+          if (prev >= 85) {
             setStatusText('Đang hoàn tất lưu trữ bản dịch...');
             return prev + 1;
           }
-          if (prev >= 55) {
+          if (prev >= 70) {
             setStatusText('Whisper đang nhận diện giọng nói local...');
             return prev + 2;
           }
